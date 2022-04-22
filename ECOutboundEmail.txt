@@ -1,0 +1,285 @@
+/*************************************************************************************************************
+ *    Class         :   ECOutboundEmail
+ *    Date          :   18/06/2013
+ *    Author        :   Jithendra Koduru
+ *                      Tata Consultancy Services
+ *    Overview      :   Utility Class for sending an email through the buttons on detail page
+ *    Functionality :   1.Used to send email with conformance agreement password to alternate signee 
+ *                      when send Agreement password is clicked on the deemed export detail page
+ *                      2.Used to send conformance agreement password to candidate along with license file attachment
+ *                      3.Used to check if the license file is uploaded to DE record before sending conf. agreement
+ 
+ *
+ *   Modified       :   Jagan Challa
+                    :   June 05, 2017
+                    :   Changes related to Echosign 5G conformance agreement changes, QForce case #00366161
+
+ *   Modified       :   Damini Adireddy
+                    :   Jan 30, 2020
+                    :   Changes related to Deemed Export Licenses
+
+ *   Modified       :   Scott Fraser
+                    :   Jul 20, 2020
+                    :   Added Group DE Acknowledgement Email
+
+ *   Modified       :   Scott Fraser
+                    :   Oct 9, 2020
+                    :   Added additional Acknowledgement Type Email notifications for Group DEs
+
+ *   Modified       :   Scott Fraser
+                    :   Oct 21, 2020
+                    :   Cleared TargetObjectId for Group DE so dummy contact isn't included
+************************************************************************************************************/
+global class ECOutboundEmail {
+    
+    /*To email the conformance agreement password to alternate signee mentioned in the deemed export*/
+    WebService static void sendEmailNotification(string id, string pwd, string licId) {
+        List<String> lstOrgWideAddress = new List<String>();
+        String emailBody = '';
+        String ecAgreementName='';
+        List<License__c> lstDELicense = new List<License__c>();
+        String candidateName;
+        String QFN;
+        try{
+            lstDELicense = [select DE_Pre_Employment_Name__c, DE_Employee_Name__c, Name from License__c where Id = :licId limit 1];
+            
+            if(!lstDELicense.isEmpty()) {
+	            License__c objLic = lstDELicense[0];
+                candidateName = objLic.DE_Pre_Employment_Name__c;
+                if(objLic.DE_Employee_Name__c != null ) {
+                    candidateName = objLic.DE_Employee_Name__c;
+                }
+                QFN = objLic.Name;
+            }
+                
+            ecAgreementName = ' - ' + QFN;        
+            emailBody = '<b>IMPORTANT: SAVE THIS EMAIL FOR THE REQUIRED DOCUSIGN <u>ACCESS CODE</u></b>.<br/><br/>';
+            emailBody += 'You are receiving this email because your employee, ' + candidateName + ', has a U.S. deemed export license<br/>'; 
+            emailBody += 'that requires an e-signature. You will soon receive an email from DocuSign with the Export License <br/>';
+            emailBody += 'Conformance Agreement. The <b>Employee and their Supervisor</b> will use the below access code to review and <br/>';
+            emailBody += 'DocuSign to enable access of the export-controlled technologies described in the deemed export license.<br/><br/>';
+            emailBody += 'DocuSign Access Code: <b><u>'+ pwd +'</b></u><br/><br/>';
+            emailBody += 'Regards,<br/><br/>';
+            emailBody += 'Export Compliance Team<br/>';
+            emailBody += 'Qualcomm Incorporated<br/>';
+            emailBody += 'Email: <a href=export.fn@qualcomm.com>export.fn@qualcomm.com</a>';
+            emailBody += '</p>';
+            //send the email
+            Messaging.sendEmail(new Messaging.SingleEmailMessage[] { ECUtils.sendEmailMsgFormating('Qualcomm Export License Agreement Access Code for ' +candidateName+' '+QFN, id,true,emailBody) } );
+        }catch(Exception e){
+            system.debug(LoggingLevel.ERROR,'In ECOutboundEmail'+e.getMessage());
+        }
+    }
+    
+    /*To send the conformance agreement password along with the license attachment to candidate*/
+    WebService static void sendConformancePasswordToCandidate(string emailAddress,string pwd,string deLicenseId,String QFN,String candidateName) {
+        
+        String ecAgreementName='';
+        String emailBody = '';
+        List<String> lsttoEmailAddrs = new List<String>();
+        List<Attachment> lstLicenseFile= new List<Attachment>();
+        ecAgreementName = ' - '+QFN;
+        List<String> lstorgWideId = new List<String>();
+        lstorgWideId = System.Label.ECOrgwideEmailID.split(':',0);
+        String fromOrgId = lstorgWideId[0];
+        String licenseFileName = System.Label.ECLicenseFileName;
+        
+        emailBody = '<b>IMPORTANT: SAVE THIS EMAIL FOR THE REQUIRED DOCUSIGN <u>ACCESS CODE</u></b>.<br/><br/>';
+        emailBody += 'A deemed export license for ' + candidateName + ' has been approved by the U.S. Government. You are<br/>'; 
+        emailBody += 'required to review the attached deemed export license with riders and conditions. You will soon receive an<br/>';
+        emailBody += 'email from DocuSign with the Export License Conformance Agreement. The <b>Employee and their</b><br/>';
+        emailBody += '<b>Supervisor</b> will use the below access code to review and DocuSign prior to any access of the export-<br/>';
+        emailBody += 'controlled technologies described in the deemed export license.<br/><br/>';
+        emailBody += 'DocuSign Access Code: <b><u>'+ pwd +'</b></u><br/><br/>';
+        emailBody += 'Regards,<br/><br/>';
+        emailBody += 'Export Compliance Team<br/>';
+        emailBody += 'Qualcomm Incorporated<br/>';
+        emailBody += 'Email: <a href=export.fn@qualcomm.com>export.fn@qualcomm.com</a>';
+        emailBody += '</p>';
+        
+        //send the email
+        Messaging.SingleEmailMessage email = new Messaging.SingleEmailMessage();
+        Messaging.EmailFileAttachment efa = new Messaging.EmailFileAttachment();
+        
+        if(deLicenseId != null & deLicenseId != ''){
+            String strLicensceFileName = licenseFileName;
+            
+            lstLicenseFile = [select Name, Body, BodyLength from Attachment where Name like :strLicensceFileName +'%' and ParentId = :deLicenseId limit 1]; 
+            
+            License__c objLic = [Select Id, Name, Deemed_Export__r.Employee__c, Deemed_Export__r.Recipient2__c from License__c where Id = :deLicenseId];
+            System.debug('Employee Supervisor email:::'+ objLic.Deemed_Export__r.Recipient2__c);
+            if(emailAddress != null){
+                lsttoEmailAddrs.add(emailAddress);
+            }
+            if(objLic.Deemed_Export__r.Recipient2__c != null){
+                lsttoEmailAddrs.add(objLic.Deemed_Export__r.Recipient2__c);
+            }
+        }        
+        
+        //set the email properties
+        email.setToAddresses(lsttoEmailAddrs);
+        email.setSubject('Qualcomm Export License Agreement Access Code for '+candidateName+' - '+QFN);
+        email.setHtmlBody(emailBody);
+        email.setOrgWideEmailAddressId(fromOrgId);
+        if(lstLicenseFile.size()>0)
+        {
+            efa.setFileName(lstLicenseFile[0].Name);
+            efa.setBody(lstLicenseFile[0].Body);
+            email.setFileAttachments(new Messaging.EmailFileAttachment[] {efa});
+        }
+        
+        //send the email
+        Messaging.sendEmail(new Messaging.SingleEmailMessage[] { email } );
+    }
+    
+    /*To send the conformance agreement password to supervisor changed*/
+     WebService static void sendConformancePasswordToCandidateEmployee(string emailAddress,string pwd,string deemedExportId,String QFN,String candidateName) {
+        
+        
+        
+        Messaging.SingleEmailMessage email = new Messaging.SingleEmailMessage();
+        email = ECOutboundEmail.sendConformancePasswordToCandidateDM(emailAddress, pwd, deemedExportId, QFN, candidateName);
+       
+        Messaging.sendEmail(new Messaging.SingleEmailMessage[] { email } );
+    }
+    
+    /* method to send multiple emails as returns email object */
+    public static  Messaging.SingleEmailMessage sendConformancePasswordToCandidateDM(string emailAddress,string pwd,string deemedExportId,String QFN,String candidateName) {
+        String ecAgreementName='';
+        String emailBody = '';
+        List<String> lsttoEmailAddrs = new List<String>();
+        List<Attachment> lstLicenseFile= new List<Attachment>();
+        ecAgreementName = ' - '+QFN;
+        List<String> lstorgWideId = new List<String>();
+        lstorgWideId = System.Label.ECOrgwideEmailID.split(':',0);
+        String fromOrgId = lstorgWideId[0];
+        String licenseFileName = System.Label.ECLicenseFileName;
+        
+        emailBody = '<b>IMPORTANT: SAVE THIS EMAIL FOR THE REQUIRED DOCUSIGN <u>ACCESS CODE</u></b>.<br/><br/>';
+        emailBody += 'You are receiving this email because your U.S. deemed export license has been approved or a supervisor<br/>'; 
+        emailBody += 'change has occurred for ' + candidateName + '. You are required to review the attached deemed export license<br/>';
+        emailBody += 'with riders and conditions. You will soon receive an email from DocuSign with the Export License <br/>';
+        emailBody += 'Conformance Agreement. The <b>Employee and their Supervisor</b> will use the below access code to review <br/>';
+        emailBody += 'and DocuSign to enable access of the export-controlled technologies described in the deemed export<br/>';
+        emailBody += 'license.<br/><br/>';
+        emailBody += 'DocuSign Access Code: <b><u>'+ pwd +'</b></u><br/><br/>';
+        emailBody += 'Regards,<br/><br/>';
+        emailBody += 'Export Compliance Team<br/>';
+        emailBody += 'Qualcomm Incorporated<br/>';
+        emailBody += 'Email: <a href=export.fn@qualcomm.com>export.fn@qualcomm.com</a>';
+
+        emailBody += '</p>';
+        
+        //send the email
+        Messaging.SingleEmailMessage email = new Messaging.SingleEmailMessage();
+        Messaging.EmailFileAttachment efa = new Messaging.EmailFileAttachment();
+        
+        lstLicenseFile = [select Name, Body, BodyLength from Attachment where Name like :licenseFileName+'%' and ParentId = :deemedExportId limit 1];
+        
+        License__c objLic = [Select Id, Name, Deemed_Export__r.Employee__c, Deemed_Export__r.Recipient2__c from License__c where Id = :deemedExportId];
+        System.debug('Employee Supervisor email:::'+ objLic.Deemed_Export__r.Recipient2__c);
+        //set the email properties Messaging.SendEmailResult
+        if(emailAddress != null){
+        	lsttoEmailAddrs.add(emailAddress);
+        }
+        if(objLic.Deemed_Export__r.Recipient2__c != null){
+        	lsttoEmailAddrs.add(objLic.Deemed_Export__r.Recipient2__c);
+        }
+        email.setToAddresses(lsttoEmailAddrs);
+        email.setSubject('Qualcomm Export License Agreement Access Code for  '+candidateName+' - '+QFN);
+        email.setHtmlBody(emailBody);
+        email.setOrgWideEmailAddressId(fromOrgId);
+        if(lstLicenseFile.size()>0)
+        {
+            efa.setFileName(lstLicenseFile[0].Name);
+            efa.setBody(lstLicenseFile[0].Body);
+            email.setFileAttachments(new Messaging.EmailFileAttachment[] {efa});
+        }
+         return email;
+    }
+    
+    /* To check for the number of unsigned agreements for the deemed export record*/
+    WebService static Integer countAgreements(string id) {
+        System.debug('id: ' + id);
+        
+        Integer agreementCnt=0;
+        
+        agreementCnt=[select count() from dsfs__DocuSign_Status__c where dsfs__Envelope_Status__c = 'Sent' and License__c = :id];
+        
+        return agreementCnt;
+    }
+    
+    public static  Messaging.SingleEmailMessage sendGroupDEAcknowledgementEmail(String emailAddress, String candidateName, License__c objLic, String strAckEmailTemplateId) {
+        String emailBody = '';
+        List<String> lsttoEmailAddrs = new List<String>();
+        List<Attachment> lstLicenseFile= new List<Attachment>();
+        List<String> lstorgWideId = new List<String>();
+        lstorgWideId = System.Label.ECOrgwideEmailID.split(':',0);
+        String fromOrgId = lstorgWideId[0];
+        String licenseFileName = System.Label.ECLicenseFileName;
+                
+        //get email body from template
+        Messaging.SingleEmailMessage email = Messaging.renderStoredEmailTemplate(strAckEmailTemplateId, '0031300002DYMXs', objLic.Id);
+		//clear fileAttachments so you don't get duplicated attachments
+        email.setFileAttachments(new List<Messaging.EmailFileAttachment>());
+        //clear TargetObjectId because we don't need to include the dummy Contact
+        email.setTargetObjectId(null);
+                         
+        //set the email properties Messaging.SendEmailResult
+        if(emailAddress != null){
+            lsttoEmailAddrs.add(emailAddress);
+        }
+        System.debug('Employee Supervisor email:::'+ objLic.Deemed_Export__r.Recipient2__c);        
+        if(objLic.Deemed_Export__r.Recipient2__c != null){
+            lsttoEmailAddrs.add(objLic.Deemed_Export__r.Recipient2__c);
+        }
+        email.setToAddresses(lsttoEmailAddrs);
+        System.debug('email.toAddresses:::'+ email.toAddresses);
+        email.setOrgWideEmailAddressId(fromOrgId);
+        
+        return email;
+    }
+    
+    /* To check for the presence of license file in DE License record before sending conformance agreement*/
+    WebService static Integer countLicenseFiles(string id) {
+        System.debug('id: ' + id);
+        Integer licenseFileCnt=0;
+        String licenseFileName = System.Label.ECLicenseFileName;
+        licenseFileCnt=[select count() from Attachment where Name like :licenseFileName+'%' and ParentId = :id];
+        return licenseFileCnt;
+    }
+  
+    WebService static String generatePassword(String strDELicenseId) {
+        String  strPasswordGenerated = null;
+        License__c dELicenseRecord = null;
+        try {
+            List<License__c> lstDELicenseRecord = [Select Id,Conformance_Agreement_Doc_Password__c, TTCP_Type__c, TTCP_Agreement_Password__c from License__c where id=:strDELicenseId];
+            
+            if(lstDELicenseRecord!=null && lstDELicenseRecord.size()>0){
+                
+                dELicenseRecord = lstDELicenseRecord[0];
+                
+                if(dELicenseRecord!=null){
+                    strPasswordGenerated = ECUtils.generatePassword();
+                    if(dELicenseRecord.TTCP_Type__c == 'TTCP' || dELicenseRecord.TTCP_Type__c == 'NETTCP'){
+                        if(dELicenseRecord.TTCP_Agreement_Password__c==null || ''==dELicenseRecord.TTCP_Agreement_Password__c)
+                            dELicenseRecord.TTCP_Agreement_Password__c = strPasswordGenerated;
+                    }
+                    else if(dELicenseRecord.Conformance_Agreement_Doc_Password__c==null || ''==dELicenseRecord.Conformance_Agreement_Doc_Password__c){
+                        dELicenseRecord.Conformance_Agreement_Doc_Password__c = strPasswordGenerated;
+                    }
+                    
+                    update dELicenseRecord;
+                }
+            }
+        }
+        catch (Exception e) {
+            system.debug('Case Trigger After Update Exception : '+ e);
+            system.debug('Case Trigger After Update Exception Message : '+ e.getMessage());
+            system.debug('Case Trigger After Update Exception Line Numer : '+ e.getLineNumber());
+            system.debug('Case Trigger After Update Exception Stack Trace: '+ e.getStackTraceString());
+            system.debug('Case Trigger After Update Exception Type Name: '+ e.getTypeName());
+        }
+        return strPasswordGenerated;
+    }
+}
